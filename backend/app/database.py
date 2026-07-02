@@ -8,106 +8,128 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 client: Optional[MongoClient] = None
-
 database = None
+_connection_error: Optional[Exception] = None
 
 
-def get_client() -> MongoClient:
-    """Create and cache the MongoDB client with improved resilience."""
-    global client
-    if client is None:
-        try:
-            # Try multiple connection strategies
-            connection_kwargs = {
-                "serverSelectionTimeoutMS": 20000,
-                "connectTimeoutMS": 20000,
-                "socketTimeoutMS": 20000,
-                "retryWrites": True,
-                "maxPoolSize": 10,
-                "minPoolSize": 1,
-            }
-            
-            # Strategy 1: Try with tlsAllowInvalidCertificates
-            try:
-                logger.info("Attempting MongoDB connection with tlsAllowInvalidCertificates...")
-                client = MongoClient(
-                    settings.MONGODB_URI,
-                    **connection_kwargs,
-                    ssl=True,
-                    tlsAllowInvalidCertificates=True,
-                )
-                client.admin.command('ping')
-                logger.info("MongoDB connection successful with tlsAllowInvalidCertificates")
-                return client
-            except Exception as e1:
-                logger.warning(f"Strategy 1 failed: {e1}")
-            
-            # Strategy 2: Try with custom SSL context
-            try:
-                logger.info("Attempting MongoDB connection with custom SSL context...")
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_NONE
-                
-                client = MongoClient(
-                    settings.MONGODB_URI,
-                    **connection_kwargs,
-                    ssl_context=ssl_context,
-                )
-                client.admin.command('ping')
-                logger.info("MongoDB connection successful with custom SSL context")
-                return client
-            except Exception as e2:
-                logger.warning(f"Strategy 2 failed: {e2}")
-            
-            # Strategy 3: Try without SSL verification
-            try:
-                logger.info("Attempting MongoDB connection without SSL certificate verification...")
-                client = MongoClient(
-                    settings.MONGODB_URI,
-                    **connection_kwargs,
-                    ssl=True,
-                    tlsInsecure=True,
-                )
-                client.admin.command('ping')
-                logger.info("MongoDB connection successful with tlsInsecure=True")
-                return client
-            except Exception as e3:
-                logger.warning(f"Strategy 3 failed: {e3}")
-            
-            # Strategy 4: Last resort - try without any SSL options
-            try:
-                logger.info("Attempting MongoDB connection with default settings...")
-                client = MongoClient(
-                    settings.MONGODB_URI,
-                    **connection_kwargs,
-                )
-                client.admin.command('ping')
-                logger.info("MongoDB connection successful with default settings")
-                return client
-            except Exception as e4:
-                logger.error(f"All MongoDB connection strategies failed")
-                logger.error(f"Strategy 4 error: {e4}")
-                raise
-                
-        except Exception as e:
-            logger.error(f"Failed to establish MongoDB connection: {e}")
-            raise
+def get_client() -> Optional[MongoClient]:
+    """Create and cache the MongoDB client with maximum resilience."""
+    global client, _connection_error
     
-    return client
+    if client is not None:
+        return client
+    
+    if _connection_error is not None:
+        logger.warning(f"MongoDB previously failed to connect: {_connection_error}")
+        # Try again in case connection is now available
+    
+    try:
+        # Strategy 1: Try with tlsAllowInvalidCertificates
+        logger.info("Attempting MongoDB connection (strategy 1)...")
+        client = MongoClient(
+            settings.MONGODB_URI,
+            serverSelectionTimeoutMS=20000,
+            connectTimeoutMS=20000,
+            socketTimeoutMS=20000,
+            retryWrites=True,
+            maxPoolSize=10,
+            minPoolSize=1,
+            ssl=True,
+            tlsAllowInvalidCertificates=True,
+        )
+        client.admin.command('ping')
+        logger.info("✓ MongoDB connected successfully (strategy 1)")
+        _connection_error = None
+        return client
+    except Exception as e1:
+        logger.warning(f"Strategy 1 failed: {type(e1).__name__}: {e1}")
+    
+    try:
+        # Strategy 2: Try with custom SSL context
+        logger.info("Attempting MongoDB connection (strategy 2)...")
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        client = MongoClient(
+            settings.MONGODB_URI,
+            serverSelectionTimeoutMS=20000,
+            connectTimeoutMS=20000,
+            socketTimeoutMS=20000,
+            retryWrites=True,
+            maxPoolSize=10,
+            minPoolSize=1,
+            ssl_context=ssl_context,
+        )
+        client.admin.command('ping')
+        logger.info("✓ MongoDB connected successfully (strategy 2)")
+        _connection_error = None
+        return client
+    except Exception as e2:
+        logger.warning(f"Strategy 2 failed: {type(e2).__name__}: {e2}")
+    
+    try:
+        # Strategy 3: Try with tlsInsecure
+        logger.info("Attempting MongoDB connection (strategy 3)...")
+        client = MongoClient(
+            settings.MONGODB_URI,
+            serverSelectionTimeoutMS=20000,
+            connectTimeoutMS=20000,
+            socketTimeoutMS=20000,
+            retryWrites=True,
+            maxPoolSize=10,
+            minPoolSize=1,
+            ssl=True,
+            tlsInsecure=True,
+        )
+        client.admin.command('ping')
+        logger.info("✓ MongoDB connected successfully (strategy 3)")
+        _connection_error = None
+        return client
+    except Exception as e3:
+        logger.warning(f"Strategy 3 failed: {type(e3).__name__}: {e3}")
+    
+    try:
+        # Strategy 4: Try without any SSL options
+        logger.info("Attempting MongoDB connection (strategy 4)...")
+        client = MongoClient(
+            settings.MONGODB_URI,
+            serverSelectionTimeoutMS=20000,
+            connectTimeoutMS=20000,
+            socketTimeoutMS=20000,
+            retryWrites=True,
+            maxPoolSize=10,
+            minPoolSize=1,
+        )
+        client.admin.command('ping')
+        logger.info("✓ MongoDB connected successfully (strategy 4)")
+        _connection_error = None
+        return client
+    except Exception as e4:
+        logger.warning(f"Strategy 4 failed: {type(e4).__name__}: {e4}")
+        _connection_error = e4
+    
+    logger.error(f"All MongoDB connection strategies failed. Last error: {_connection_error}")
+    # Return None instead of raising - let routes handle gracefully
+    return None
 
 
 def get_database():
-    """Get the configured MongoDB database with retry logic."""
+    """Get the configured MongoDB database with maximum resilience."""
     global database
     if database is None:
+        client = get_client()
+        if client is None:
+            logger.error("Cannot initialize database - MongoDB client unavailable")
+            raise RuntimeError("MongoDB connection unavailable. Check logs for details.")
+        
         try:
-            client = get_client()
             database = client[settings.MONGODB_DB]
-            logger.info(f"Successfully connected to database: {settings.MONGODB_DB}")
-        except Exception as exc:
-            logger.error(f"Failed to get MongoDB database: {exc}")
-            raise
+            logger.info(f"Successfully initialized database: {settings.MONGODB_DB}")
+        except Exception as e:
+            logger.error(f"Failed to get database object: {e}", exc_info=True)
+            raise RuntimeError(f"Cannot access database: {e}")
+    
     return database
 
 
