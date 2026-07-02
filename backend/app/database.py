@@ -1,5 +1,6 @@
 import logging
 from typing import Generator, Optional
+import ssl
 
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
@@ -15,14 +16,21 @@ def get_client() -> MongoClient:
     """Create and cache the MongoDB client."""
     global client
     if client is None:
+        # Create custom SSL context
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
         client = MongoClient(
             settings.MONGODB_URI,
-            serverSelectionTimeoutMS=10000,
-            connectTimeoutMS=10000,
-            socketTimeoutMS=10000,
-            tls=True,
-            tlsAllowInvalidCertificates=True,
+            serverSelectionTimeoutMS=15000,
+            connectTimeoutMS=15000,
+            socketTimeoutMS=15000,
+            ssl=True,
+            ssl_context=ssl_context,
             retryWrites=True,
+            maxPoolSize=10,
+            minPoolSize=2,
         )
     return client
 
