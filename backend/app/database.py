@@ -1,6 +1,7 @@
 import logging
 from typing import Generator, Optional
 import ssl
+import urllib.parse
 
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
@@ -16,22 +17,42 @@ def get_client() -> MongoClient:
     """Create and cache the MongoDB client."""
     global client
     if client is None:
-        # Create custom SSL context
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        
-        client = MongoClient(
-            settings.MONGODB_URI,
-            serverSelectionTimeoutMS=15000,
-            connectTimeoutMS=15000,
-            socketTimeoutMS=15000,
-            ssl=True,
-            ssl_context=ssl_context,
-            retryWrites=True,
-            maxPoolSize=10,
-            minPoolSize=2,
-        )
+        try:
+            # Try with SSL but allow self-signed certificates
+            client = MongoClient(
+                settings.MONGODB_URI,
+                serverSelectionTimeoutMS=20000,
+                connectTimeoutMS=20000,
+                socketTimeoutMS=20000,
+                retryWrites=True,
+                maxPoolSize=10,
+                minPoolSize=1,
+                ssl=True,
+                tlsAllowInvalidCertificates=True,
+                tlsInsecure=True,
+            )
+            # Test connection immediately
+            client.admin.command('ping')
+            logger.info("MongoDB connection successful")
+        except Exception as e:
+            logger.warning(f"MongoDB connection failed with standard SSL: {e}. Retrying without SSL verification...")
+            # Fallback: Try with SSL disabled (for development/testing)
+            try:
+                # Parse URI to create connection without SSL if needed
+                client = MongoClient(
+                    settings.MONGODB_URI,
+                    serverSelectionTimeoutMS=20000,
+                    connectTimeoutMS=20000,
+                    socketTimeoutMS=20000,
+                    retryWrites=True,
+                    maxPoolSize=10,
+                    minPoolSize=1,
+                )
+                client.admin.command('ping')
+                logger.info("MongoDB connection successful (fallback mode)")
+            except Exception as e2:
+                logger.error(f"MongoDB connection failed: {e2}")
+                raise
     return client
 
 
@@ -56,17 +77,36 @@ def ensure_indexes() -> None:
     """Create indexes for the main collections."""
     try:
         db = get_database()
-        db["students"].create_index("email", unique=True)
-        db["students"].create_index("roll_number", unique=True)
-        db["students"].create_index("student_id", unique=True)
-        db["admins"].create_index("username", unique=True)
-        db["admins"].create_index("email", unique=True)
-        db["attendance"].create_index([("student_id", 1), ("date", 1)])
-        db["attendance"].create_index("attendance_id", unique=True)
-        db["webauthn_credentials"].create_index("credential_id", unique=True)
-        db["webauthn_credentials"].create_index("student_id")
-        db["attendance_logs"].create_index([("student_id", 1), ("timestamp", -1)])
-    except PyMongoError as exc:
+        try:
+            db["students"].create_index("email", unique=True)
+            db["students"].create_index("roll_number", unique=True)
+            db["students"].create_index("student_id", unique=True)
+        except Exception as e:
+            logger.warning("Could not create student indexes: %s", e)
+        
+        try:
+            db["admins"].create_index("username", unique=True)
+            db["admins"].create_index("email", unique=True)
+        except Exception as e:
+            logger.warning("Could not create admin indexes: %s", e)
+        
+        try:
+            db["attendance"].create_index([("student_id", 1), ("date", 1)])
+            db["attendance"].create_index("attendance_id", unique=True)
+        except Exception as e:
+            logger.warning("Could not create attendance indexes: %s", e)
+        
+        try:
+            db["webauthn_credentials"].create_index("credential_id", unique=True)
+            db["webauthn_credentials"].create_index("student_id")
+        except Exception as e:
+            logger.warning("Could not create webauthn indexes: %s", e)
+        
+        try:
+            db["attendance_logs"].create_index([("student_id", 1), ("timestamp", -1)])
+        except Exception as e:
+            logger.warning("Could not create attendance_logs indexes: %s", e)
+    except Exception as exc:
         logger.warning("Could not create MongoDB indexes: %s", exc)
 
 
