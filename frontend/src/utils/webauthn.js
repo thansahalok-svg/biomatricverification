@@ -2,7 +2,7 @@
 
 /**
  * Check if the current page is in a secure context.
- * WebAuthn ONLY works in secure contexts (HTTPS or localhost).
+ * WebAuthn ONLY works in secure contexts (HTTPS or other secure origins).
  */
 export const isSecureContext = () => {
   return window.isSecureContext
@@ -39,7 +39,7 @@ export const getWebAuthnSupportDetails = async () => {
  * Returns true only if all requirements are met
  */
 export const isWebAuthnSupported = () => {
-  // 1. Must be in a secure context (HTTPS or localhost)
+  // 1. Must be in a secure context (HTTPS or other secure origin)
   if (!window.isSecureContext) {
     return false
   }
@@ -71,7 +71,7 @@ export const getWebAuthnErrorMessage = async () => {
       
 To use fingerprint registration:
 1. Access this application through HTTPS
-2. Or use localhost/127.0.0.1 (which uses HTTPS automatically)
+2. Use a secure origin or a trusted development environment
 3. Contact your administrator if this is a shared device
 
 Current URL: ${window.location.href}`,

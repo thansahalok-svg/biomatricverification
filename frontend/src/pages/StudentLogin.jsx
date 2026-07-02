@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import api from '../services/api'
 import useAuthStore from '../store/authStore'
 
@@ -82,7 +82,7 @@ export default function StudentLogin() {
 
         <div className="mt-4 border-t border-gray-200 pt-4">
           <p className="text-center text-gray-600 mb-2">
-            Don't have an account? <a href="/register" className="text-blue-600 hover:underline">Register</a>
+            Don&apos;t have an account? <a href="/register" className="text-blue-600 hover:underline">Register</a>
           </p>
           <p className="text-center text-gray-600">
             Admin access? <a href="/admin/login" className="text-blue-600 hover:underline">Login as Admin</a>

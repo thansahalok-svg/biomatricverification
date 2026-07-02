@@ -1,40 +1,60 @@
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from pymongo.errors import PyMongoError
+
 from app.config import settings
-from app.database import ensure_indexes, get_database
+from app.database import ensure_indexes, get_database, get_client
 from app.routes import admin_auth, student_auth, webauthn, attendance, student, admin
 from app.utils.security import hash_password
 
-# Initialize MongoDB indexes
-ensure_indexes()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
-# Create default admin user if none exists
-try:
-    db = get_database()
-    existing_admin = db["admins"].find_one({})
-    if not existing_admin:
-        default_admin = {
-            "admin_id": 1,
-            "username": settings.ADMIN_DEFAULT_USERNAME,
-            "password_hash": hash_password(settings.ADMIN_DEFAULT_PASSWORD),
-            "email": None,
-            "full_name": "System Administrator",
-            "is_active": True,
-        }
-        db["admins"].insert_one(default_admin)
-        print(f"Default admin user created: {settings.ADMIN_DEFAULT_USERNAME}")
-except Exception:
-    pass
+logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
 app = FastAPI(
     title="Biometric Attendance System",
     description="WebAuthn-based attendance management system",
-    version="1.0.0"
+    version="1.0.0",
 )
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    """Initialize MongoDB and default data on startup."""
+    try:
+        ensure_indexes()
+        db = get_database()
+        existing_admin = db["admins"].find_one({})
+        if not existing_admin:
+            default_password = settings.ADMIN_DEFAULT_PASSWORD or "admin123"
+            default_admin = {
+                "admin_id": 1,
+                "username": settings.ADMIN_DEFAULT_USERNAME,
+                "password_hash": hash_password(default_password),
+                "email": None,
+                "full_name": "System Administrator",
+                "is_active": True,
+            }
+            db["admins"].insert_one(default_admin)
+            logger.info("Default admin user created: %s", settings.ADMIN_DEFAULT_USERNAME)
+    except PyMongoError as exc:
+        logger.error("Failed MongoDB startup initialization: %s", exc)
+    except Exception as exc:
+        logger.error("Unexpected startup failure: %s", exc)
+
+    finally:
+        try:
+            client = get_client()
+            client.admin.command("ping")
+        except Exception as exc:
+            logger.warning("MongoDB ping failed during startup: %s", exc)
 
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
@@ -76,11 +96,16 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint."""
     return {
-        "status": "healthy",
-        "timestamp": "2024-01-01T00:00:00Z"
+        "status": "ok"
     }
+
+
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    response = await call_next(request)
+    return response
 
 
 if __name__ == "__main__":
@@ -89,5 +114,6 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=5000,
-        reload=True
+        reload=False,
+        log_level="info",
     )

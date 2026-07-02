@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import StudentLogin from './pages/StudentLogin'
 import StudentRegister from './pages/StudentRegister'

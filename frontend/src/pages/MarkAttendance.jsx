@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { attendanceAPI, studentAPI, webauthnAPI } from '../services/api'
 import { createAuthenticationRequest, isWebAuthnSupported, getWebAuthnErrorMessage, getWebAuthnSupportDetails } from '../utils/webauthn'
 

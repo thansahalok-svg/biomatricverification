@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { webauthnAPI } from '../services/api'
 import { isWebAuthnSupported, createRegistrationRequest, isMobileDevice, getWebAuthnErrorMessage, getWebAuthnSupportDetails } from '../utils/webauthn'
 
@@ -78,7 +78,7 @@ export default function BiometricRegister() {
       <div className="card max-w-md w-full">
         <div className="mb-6">
           <h1 className="navbar-brand text-center text-2xl">Register Biometric</h1>
-          <p className="text-center text-gray-600 mt-2">Use your device's fingerprint sensor</p>
+          <p className="text-center text-gray-600 mt-2">Use your device&apos;s fingerprint sensor</p>
         </div>
 
         {message && (
@@ -110,7 +110,7 @@ export default function BiometricRegister() {
               </p>
               <ul className="text-sm text-gray-700 list-disc list-inside mt-2">
                 <li>Open this page on your mobile phone</li>
-                <li>Use the phone's built-in fingerprint sensor</li>
+                <li>Use the phone&apos;s built-in fingerprint sensor</li>
                 <li>Place your finger on the fingerprint scanner</li>
                 <li>Your fingerprint will be securely stored</li>
               </ul>

@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { studentAPI, attendanceAPI, webauthnAPI } from '../services/api'
-import { isWebAuthnSupported, createAuthenticationRequest, getDeviceInfo } from '../utils/webauthn'
+import { useState, useEffect } from 'react'
+import { studentAPI, attendanceAPI } from '../services/api'
 
 export default function StudentDashboard() {
   const [student, setStudent] = useState(null)
@@ -28,43 +27,6 @@ export default function StudentDashboard() {
       showMessage('Failed to load data', 'error')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleMarkAttendance = async () => {
-    try {
-      if (!biometricRegistered) {
-        showMessage('Please register biometric first', 'warning')
-        return
-      }
-
-      if (!isWebAuthnSupported()) {
-        showMessage('WebAuthn not supported on this device', 'error')
-        return
-      }
-
-      // Get authentication options
-      const optionsRes = await webauthnAPI.getAuthenticateOptions(student.student_id)
-      const options = optionsRes.data
-
-      // Create authentication request
-      const assertion = await createAuthenticationRequest(options)
-      
-      // Verify authentication
-      const verifyRes = await webauthnAPI.verifyAuthentication(
-        { student_id: student.student_id, response: assertion, challenge: options.challenge }
-      )
-
-      if (verifyRes.data.status === 'success') {
-        // Mark attendance
-        const deviceInfo = JSON.stringify(getDeviceInfo())
-        await attendanceAPI.markAttendance(deviceInfo)
-        
-        showMessage('Attendance marked successfully!', 'success')
-        setTimeout(() => loadStudentData(), 2000)
-      }
-    } catch (error) {
-      showMessage(error.response?.data?.detail || 'Attendance marking failed', 'error')
     }
   }
 

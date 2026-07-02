@@ -1,12 +1,7 @@
 import axios from 'axios'
 
 const getApiBaseUrl = () => {
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL
-  }
-
-  // Use a relative API path by default so HTTPS frontends do not load mixed-content.
-  return '/api'
+  return import.meta.env.VITE_API_URL || ''
 }
 
 const API_BASE_URL = getApiBaseUrl()

@@ -1,16 +1,28 @@
+import logging
+from typing import Generator, Optional
+
 from pymongo import MongoClient
-from pymongo.errors import PyMongoError
+from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 from app.config import settings
 
-client = None
+logger = logging.getLogger(__name__)
+client: Optional[MongoClient] = None
+
 database = None
 
 
-def get_client():
+def get_client() -> MongoClient:
     """Create and cache the MongoDB client."""
     global client
     if client is None:
-        client = MongoClient(settings.MONGODB_URI, serverSelectionTimeoutMS=5000)
+        client = MongoClient(
+            settings.MONGODB_URI,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=5000,
+            socketTimeoutMS=5000,
+            tls=True,
+            tlsAllowInvalidCertificates=False,
+        )
     return client
 
 
@@ -19,14 +31,19 @@ def get_database():
     global database
     if database is None:
         try:
-            database = get_client()[settings.MONGODB_DB]
+            client = get_client()
+            database = client[settings.MONGODB_DB]
             ensure_indexes()
-        except PyMongoError:
+        except ServerSelectionTimeoutError as exc:
+            logger.error("MongoDB unavailable during startup: %s", exc)
+            raise
+        except PyMongoError as exc:
+            logger.warning("MongoDB warning while initializing: %s", exc)
             database = get_client()[settings.MONGODB_DB]
     return database
 
 
-def ensure_indexes():
+def ensure_indexes() -> None:
     """Create indexes for the main collections."""
     try:
         db = get_database()
@@ -40,8 +57,8 @@ def ensure_indexes():
         db["webauthn_credentials"].create_index("credential_id", unique=True)
         db["webauthn_credentials"].create_index("student_id")
         db["attendance_logs"].create_index([("student_id", 1), ("timestamp", -1)])
-    except PyMongoError:
-        pass
+    except PyMongoError as exc:
+        logger.warning("Could not create MongoDB indexes: %s", exc)
 
 
 def next_sequence(name: str) -> int:
@@ -56,7 +73,7 @@ def next_sequence(name: str) -> int:
     return result["value"]
 
 
-def get_db():
+def get_db() -> Generator:
     """Get the database dependency for FastAPI routes and services."""
     db = get_database()
     try:

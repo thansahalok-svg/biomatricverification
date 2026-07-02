@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.student import StudentRegister, StudentResponse
 from app.schemas.auth import Token, StudentLogin
@@ -11,7 +10,7 @@ router = APIRouter(prefix="/api/auth/student", tags=["student-auth"])
 
 
 @router.post("/register", response_model=StudentResponse)
-async def register_student(student: StudentRegister, db: Session = Depends(get_db)):
+async def register_student(student: StudentRegister, db = Depends(get_db)):
     """Student registration endpoint"""
     
     new_student = AuthService.create_student(
@@ -31,7 +30,7 @@ async def register_student(student: StudentRegister, db: Session = Depends(get_d
 @router.post("/login", response_model=Token)
 async def login_student(
     credentials: StudentLogin,
-    db: Session = Depends(get_db)
+    db = Depends(get_db)
 ):
     """Student login endpoint"""
     

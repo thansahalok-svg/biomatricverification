@@ -23,14 +23,7 @@ export default defineConfig({
   server: {
     https: httpsConfig || false,
     host: '0.0.0.0',
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '/api')
-      }
-    }
+    port: 5173
   },
   build: {
     outDir: 'dist',

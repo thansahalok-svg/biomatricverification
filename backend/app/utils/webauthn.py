@@ -1,4 +1,5 @@
 import base64
+import logging
 from typing import Optional, List, Dict, Any
 from webauthn import (
     generate_registration_options,
@@ -15,6 +16,8 @@ from webauthn.helpers.structs import (
 )
 from webauthn.helpers.cose import COSEAlgorithmIdentifier
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def base64url_encode(data: bytes) -> str:
@@ -123,7 +126,7 @@ class WebAuthnService:
                 "authenticator_type": str(verified_registration.credential_device_type),
             }
         except Exception as e:
-            print(f"Registration verification failed: {str(e)}")
+            logger.warning("Registration verification failed: %s", e)
             return None
     
     @staticmethod
@@ -161,5 +164,5 @@ class WebAuthnService:
 
             return verified_auth.new_sign_count
         except Exception as e:
-            print(f"Authentication verification failed: {str(e)}")
+            logger.warning("Authentication verification failed: %s", e)
             return None

@@ -29,7 +29,15 @@ npm run dev
 
 ## Environment
 
-Update `src/services/api.js` with your backend URL if different from `http://localhost:5000`.
+Set your production backend API URL using Vite environment variables.
+
+Create `frontend/.env` or set the value in your Vercel project:
+
+```bash
+VITE_API_URL=https://biomatricverificationfingerprint-4.onrender.com
+```
+
+Do not hardcode localhost URLs in production.
 
 ## Technologies
 
