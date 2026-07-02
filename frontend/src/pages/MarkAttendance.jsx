@@ -1,16 +1,29 @@
 import React, { useEffect, useState } from 'react'
 import { attendanceAPI, studentAPI, webauthnAPI } from '../services/api'
-import { createAuthenticationRequest, getDeviceInfo, isWebAuthnSupported } from '../utils/webauthn'
+import { createAuthenticationRequest, isWebAuthnSupported, getWebAuthnErrorMessage, getWebAuthnSupportDetails } from '../utils/webauthn'
 
 export default function MarkAttendance() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('')
   const [student, setStudent] = useState(null)
+  const [webauthnError, setWebauthnError] = useState(null)
+  const [supportDetails, setSupportDetails] = useState(null)
 
   useEffect(() => {
     loadProfile()
+    checkWebAuthnSupport()
   }, [])
+
+  const checkWebAuthnSupport = async () => {
+    const details = await getWebAuthnSupportDetails()
+    setSupportDetails(details)
+
+    if (!isWebAuthnSupported()) {
+      const errorInfo = await getWebAuthnErrorMessage()
+      setWebauthnError(errorInfo)
+    }
+  }
 
   const loadProfile = async () => {
     try {
@@ -24,7 +37,8 @@ export default function MarkAttendance() {
   const handleMarkAttendance = async () => {
     try {
       if (!isWebAuthnSupported()) {
-        showMessage('WebAuthn is not supported on this device', 'error')
+        const errorInfo = await getWebAuthnErrorMessage()
+        showMessage(errorInfo.message, 'error')
         return
       }
 
@@ -48,7 +62,10 @@ export default function MarkAttendance() {
       })
 
       if (verifyRes.data.status === 'success') {
-        const deviceInfo = JSON.stringify(getDeviceInfo())
+        const deviceInfo = JSON.stringify({
+          userAgent: navigator.userAgent,
+          timestamp: new Date().toISOString()
+        })
         await attendanceAPI.markAttendance(deviceInfo)
         showMessage('Attendance marked successfully!', 'success')
         setTimeout(() => {
@@ -82,24 +99,43 @@ export default function MarkAttendance() {
           </div>
         )}
 
-        <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-          <p className="text-sm text-gray-700">
-            <strong>Instructions:</strong>
-          </p>
-          <ul className="text-sm text-gray-700 list-disc list-inside mt-2">
-            <li>Make sure your fingerprint is already registered</li>
-            <li>Click the button below</li>
-            <li>Complete the fingerprint prompt on your device</li>
-          </ul>
-        </div>
+        {webauthnError && (
+          <div className={`alert alert-${webauthnError.severity} mb-4`}>
+            <strong>{webauthnError.title}</strong>
+            <p className="mt-2 whitespace-pre-wrap text-sm">{webauthnError.message}</p>
+            {supportDetails && (
+              <details className="mt-3 cursor-pointer">
+                <summary className="text-xs font-semibold underline">Technical Details</summary>
+                <pre className="mt-2 text-xs bg-gray-200 p-2 rounded overflow-auto">
+                  {JSON.stringify(supportDetails, null, 2)}
+                </pre>
+              </details>
+            )}
+          </div>
+        )}
 
-        <button
-          onClick={handleMarkAttendance}
-          className="btn btn-secondary w-full mb-4"
-          disabled={loading}
-        >
-          {loading ? 'Checking fingerprint...' : 'Mark Attendance with Fingerprint'}
-        </button>
+        {!webauthnError && student && (
+          <>
+            <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+              <p className="text-sm text-gray-700">
+                <strong>Instructions:</strong>
+              </p>
+              <ul className="text-sm text-gray-700 list-disc list-inside mt-2">
+                <li>Make sure your fingerprint is already registered</li>
+                <li>Click the button below</li>
+                <li>Complete the fingerprint prompt on your device</li>
+              </ul>
+            </div>
+
+            <button
+              onClick={handleMarkAttendance}
+              className="btn btn-secondary w-full mb-4"
+              disabled={loading || !student?.biometric_registered}
+            >
+              {loading ? 'Checking fingerprint...' : 'Mark Attendance with Fingerprint'}
+            </button>
+          </>
+        )}
 
         <p className="text-center text-gray-600">
           <a href="/student/dashboard" className="text-blue-600 hover:underline">Back to Dashboard</a>

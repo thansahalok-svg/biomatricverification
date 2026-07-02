@@ -1,16 +1,33 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { webauthnAPI } from '../services/api'
-import { isWebAuthnSupported, createRegistrationRequest, isMobileDevice } from '../utils/webauthn'
+import { isWebAuthnSupported, createRegistrationRequest, isMobileDevice, getWebAuthnErrorMessage, getWebAuthnSupportDetails } from '../utils/webauthn'
 
 export default function BiometricRegister() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('')
+  const [webauthnError, setWebauthnError] = useState(null)
+  const [supportDetails, setSupportDetails] = useState(null)
+
+  useEffect(() => {
+    checkWebAuthnSupport()
+  }, [])
+
+  const checkWebAuthnSupport = async () => {
+    const details = await getWebAuthnSupportDetails()
+    setSupportDetails(details)
+
+    if (!isWebAuthnSupported()) {
+      const errorInfo = await getWebAuthnErrorMessage()
+      setWebauthnError(errorInfo)
+    }
+  }
 
   const handleRegisterBiometric = async () => {
     try {
       if (!isWebAuthnSupported()) {
-        showMessage('WebAuthn is not supported on this device', 'error')
+        const errorInfo = await getWebAuthnErrorMessage()
+        showMessage(errorInfo.message, 'error')
         return
       }
 
@@ -70,25 +87,44 @@ export default function BiometricRegister() {
           </div>
         )}
 
-        <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-          <p className="text-sm text-gray-700">
-            <strong>Instructions:</strong>
-          </p>
-          <ul className="text-sm text-gray-700 list-disc list-inside mt-2">
-            <li>Open this page on your mobile phone</li>
-            <li>Use the phone's built-in fingerprint sensor</li>
-            <li>Place your finger on the fingerprint scanner</li>
-            <li>Your fingerprint will be securely stored</li>
-          </ul>
-        </div>
+        {webauthnError && (
+          <div className={`alert alert-${webauthnError.severity} mb-4`}>
+            <strong>{webauthnError.title}</strong>
+            <p className="mt-2 whitespace-pre-wrap text-sm">{webauthnError.message}</p>
+            {supportDetails && (
+              <details className="mt-3 cursor-pointer">
+                <summary className="text-xs font-semibold underline">Technical Details</summary>
+                <pre className="mt-2 text-xs bg-gray-200 p-2 rounded overflow-auto">
+                  {JSON.stringify(supportDetails, null, 2)}
+                </pre>
+              </details>
+            )}
+          </div>
+        )}
 
-        <button
-          onClick={handleRegisterBiometric}
-          className="btn btn-secondary w-full mb-4"
-          disabled={loading}
-        >
-          {loading ? 'Registering...' : 'Register Fingerprint'}
-        </button>
+        {!webauthnError && (
+          <>
+            <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+              <p className="text-sm text-gray-700">
+                <strong>Instructions:</strong>
+              </p>
+              <ul className="text-sm text-gray-700 list-disc list-inside mt-2">
+                <li>Open this page on your mobile phone</li>
+                <li>Use the phone's built-in fingerprint sensor</li>
+                <li>Place your finger on the fingerprint scanner</li>
+                <li>Your fingerprint will be securely stored</li>
+              </ul>
+            </div>
+
+            <button
+              onClick={handleRegisterBiometric}
+              className="btn btn-secondary w-full mb-4"
+              disabled={loading}
+            >
+              {loading ? 'Registering...' : 'Register Fingerprint'}
+            </button>
+          </>
+        )}
 
         <p className="text-center text-gray-600">
           <a href="/student/dashboard" className="text-blue-600 hover:underline">Back to Dashboard</a>

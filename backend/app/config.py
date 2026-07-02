@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     ADMIN_DEFAULT_USERNAME: str = "admin"
     ADMIN_DEFAULT_PASSWORD: str = "admin123"
 
-    # CORS
-    ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5000,http://10.182.234.13:5173,http://10.182.234.13:5000,http://10.182.234.13:3000"
+    # CORS - Allow all origins for development
+    ORIGINS: str = "*"
 
     # WebAuthn
     RP_ID: str = "localhost"

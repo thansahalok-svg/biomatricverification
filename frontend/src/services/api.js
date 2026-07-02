@@ -1,6 +1,15 @@
 import axios from 'axios'
 
-const API_BASE_URL = 'http://localhost:8000/api'
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+
+  // Use a relative API path by default so HTTPS frontends do not load mixed-content.
+  return '/api'
+}
+
+const API_BASE_URL = getApiBaseUrl()
 
 const api = axios.create({
   baseURL: API_BASE_URL,

@@ -52,7 +52,7 @@ app.add_middleware(
 # Trusted host middleware
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["localhost", "127.0.0.1", "localhost:5173", "localhost:3000", "localhost:5000", "10.182.234.13", "10.182.234.13:5173", "10.182.234.13:5000"]
+    allowed_hosts=["*"]
 )
 
 # Include routers
