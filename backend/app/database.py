@@ -17,11 +17,12 @@ def get_client() -> MongoClient:
     if client is None:
         client = MongoClient(
             settings.MONGODB_URI,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=5000,
-            socketTimeoutMS=5000,
+            serverSelectionTimeoutMS=10000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=10000,
             tls=True,
-            tlsAllowInvalidCertificates=False,
+            tlsAllowInvalidCertificates=True,
+            retryWrites=True,
         )
     return client
 
