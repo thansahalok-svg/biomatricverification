@@ -89,12 +89,4 @@ async def login_admin(credentials: AdminLogin):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Login failed: {str(e)}"
         )
-        data={"sub": str(admin["admin_id"]), "role": "admin"}
-    )
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-        "expires_in": 30 * 60
-    }
+        
