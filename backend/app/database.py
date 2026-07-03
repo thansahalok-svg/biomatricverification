@@ -1,7 +1,10 @@
 import logging
+import sys
+import ssl
 from typing import Generator, Optional
+from urllib.parse import urlparse
 
-from pymongo import MongoClient
+from pymongo import MongoClient, __version__ as pymongo_version
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 from app.config import settings
 
@@ -10,9 +13,50 @@ client: Optional[MongoClient] = None
 database = None
 
 
+def log_environment_info() -> None:
+    """Log diagnostic information about the Python and MongoDB environment."""
+    try:
+        import ssl as ssl_module
+        import dnspython
+        import certifi
+        
+        logger.info("=" * 70)
+        logger.info("ENVIRONMENT DIAGNOSTICS")
+        logger.info("=" * 70)
+        logger.info(f"Python Version: {sys.version}")
+        logger.info(f"Python Executable: {sys.executable}")
+        logger.info(f"PyMongo Version: {pymongo_version}")
+        logger.info(f"OpenSSL Version: {ssl_module.OPENSSL_VERSION}")
+        logger.info(f"SSL Default Cipher List Available: {bool(ssl_module.get_default_verify_paths())}")
+        
+        try:
+            import dns
+            logger.info(f"DNSPython Version: {dns.__version__}")
+        except Exception as e:
+            logger.warning(f"Could not determine DNSPython version: {e}")
+        
+        try:
+            logger.info(f"Certifi CA Bundle: {certifi.where()}")
+        except Exception as e:
+            logger.warning(f"Could not determine Certifi CA bundle: {e}")
+        
+        logger.info("=" * 70)
+    except Exception as e:
+        logger.warning(f"Could not log environment info: {e}")
+
+
+def extract_cluster_hostname(uri: str) -> Optional[str]:
+    """Extract hostname from MongoDB URI without exposing credentials."""
+    try:
+        parsed = urlparse(uri)
+        return parsed.hostname
+    except Exception:
+        return None
+
+
 def get_client() -> Optional[MongoClient]:
     """
-    Create and cache the MongoDB client.
+    Create and cache the MongoDB client with comprehensive error handling.
     
     Uses a single production-ready configuration for MongoDB Atlas.
     The connection string should be a valid MongoDB URI (mongodb+srv://... or mongodb://...).
@@ -24,11 +68,31 @@ def get_client() -> Optional[MongoClient]:
         return client
     
     try:
-        logger.info("Connecting to MongoDB Atlas...")
+        # Log environment on first connection attempt
+        log_environment_info()
+        
+        # Verify configuration
+        if not settings.MONGODB_URI:
+            error_msg = "MONGODB_URI environment variable is not set"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        if not settings.MONGODB_DB:
+            error_msg = "MONGODB_DB environment variable is not set"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # Extract and log cluster info (without credentials)
+        cluster_host = extract_cluster_hostname(settings.MONGODB_URI)
+        logger.info(f"Connecting to MongoDB Atlas...")
+        logger.info(f"  - Cluster: {cluster_host}")
+        logger.info(f"  - Database: {settings.MONGODB_DB}")
+        logger.info(f"  - Connection String Format: mongodb+srv://" + ("SRV" if "mongodb+srv" in settings.MONGODB_URI else "standard"))
         
         # Production-ready MongoDB connection configuration
         # MongoDB Atlas URIs (mongodb+srv://) automatically use TLS
         # No additional SSL parameters needed for valid certificates
+        logger.info("Creating MongoDB client...")
         client = MongoClient(
             settings.MONGODB_URI,
             serverSelectionTimeoutMS=30000,
@@ -42,16 +106,53 @@ def get_client() -> Optional[MongoClient]:
         )
         
         # Verify connection is working
+        logger.info("Attempting MongoDB ping command...")
         client.admin.command('ping')
-        logger.info("✓ MongoDB connection successful")
+        logger.info("✓ MongoDB connection successful - database is accessible")
         
         return client
         
     except ServerSelectionTimeoutError as e:
-        logger.error(f"MongoDB connection timeout. Check your MONGODB_URI and network connectivity: {e}")
+        logger.error("=" * 70)
+        logger.error("MONGODB CONNECTION TIMEOUT ERROR")
+        logger.error("=" * 70)
+        logger.error("Failed to connect to MongoDB Atlas within 30 seconds")
+        logger.error("Possible causes:")
+        logger.error("  1. MongoDB Atlas Network Access - Check IP whitelist settings")
+        logger.error("  2. DNS Resolution - Unable to resolve cluster SRV record")
+        logger.error("  3. Render Networking - Outbound connection may be blocked")
+        logger.error("  4. Credentials - Invalid username/password")
+        logger.error(f"Error Details: {e}")
+        logger.error("=" * 70)
         return None
+        
     except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {type(e).__name__}: {e}")
+        logger.error("=" * 70)
+        logger.error("MONGODB CONNECTION ERROR")
+        logger.error("=" * 70)
+        logger.error(f"Error Type: {type(e).__name__}")
+        logger.error(f"Error Message: {e}")
+        
+        # Provide specific guidance based on error type
+        error_str = str(e).lower()
+        if "ssl" in error_str or "tls" in error_str or "handshake" in error_str:
+            logger.error("\nLikely TLS/SSL Issue:")
+            logger.error("  - Verify MongoDB Atlas is using valid TLS certificates")
+            logger.error("  - Check if Python OpenSSL version is up-to-date")
+            logger.error("  - Try using the standard mongodb:// URI instead of mongodb+srv://")
+            logger.error("  - Verify Network Access rule includes Render's IP")
+        elif "authentication" in error_str or "unauthorized" in error_str:
+            logger.error("\nLikely Authentication Issue:")
+            logger.error("  - Verify MONGODB_URI credentials are correct")
+            logger.error("  - Check that the database user has proper permissions")
+            logger.error("  - Verify the database user is not locked/disabled in MongoDB Atlas")
+        elif "dns" in error_str or "name" in error_str:
+            logger.error("\nLikely DNS/Resolution Issue:")
+            logger.error("  - Verify cluster hostname is correct in MONGODB_URI")
+            logger.error("  - Check that DNSPython is installed (required for SRV lookups)")
+            logger.error("  - Try using IP address instead of hostname")
+        
+        logger.error("=" * 70)
         return None
 
 

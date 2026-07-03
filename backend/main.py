@@ -29,52 +29,74 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event() -> None:
     """Initialize MongoDB and default data on startup."""
+    logger.info("=" * 70)
+    logger.info("APPLICATION STARTUP")
+    logger.info("=" * 70)
+    
+    # CRITICAL: Verify MongoDB connection first
+    logger.info("Step 1: Verifying MongoDB connection...")
     try:
-        logger.info("Starting application...")
+        client = get_client()
+        if client is None:
+            raise RuntimeError("MongoDB client initialization returned None - check logs for connection details")
         
-        # Try to establish MongoDB connection and create indexes
-        try:
-            ensure_indexes()
-            logger.info("Database indexes ensured")
-        except Exception as e:
-            logger.warning("Could not ensure indexes at startup: %s", e)
-        
-        # Initialize default admin user if it doesn't exist
-        try:
-            db = get_database()
-            existing_admin = db["admins"].find_one({})
-            if not existing_admin:
-                default_password = settings.ADMIN_DEFAULT_PASSWORD or "admin123"
-                default_admin = {
-                    "admin_id": 1,
-                    "username": settings.ADMIN_DEFAULT_USERNAME,
-                    "password_hash": hash_password(default_password),
-                    "email": None,
-                    "full_name": "System Administrator",
-                    "is_active": True,
-                }
-                db["admins"].insert_one(default_admin)
-                logger.info("Default admin user created: %s", settings.ADMIN_DEFAULT_USERNAME)
-            else:
-                logger.info("Admin user already exists")
-        except PyMongoError as exc:
-            logger.error("Failed to initialize admin user: %s", exc)
-        except Exception as exc:
-            logger.error("Unexpected error during admin initialization: %s", exc)
-        
-        # Test MongoDB connectivity
-        try:
-            client = get_client()
-            client.admin.command("ping")
-            logger.info("MongoDB ping successful - database is accessible")
-        except Exception as exc:
-            logger.warning("MongoDB ping failed during startup (application may still work): %s", exc)
-        
-        logger.info("Application startup complete")
-        
+        # Verify the connection actually works
+        client.admin.command("ping")
+        logger.info("✓ MongoDB connection verified successfully")
     except Exception as exc:
-        logger.error("Critical startup failure: %s", exc)
-        raise
+        logger.error("=" * 70)
+        logger.error("CRITICAL: MONGODB CONNECTION FAILED")
+        logger.error("=" * 70)
+        logger.error("The application cannot start without a working MongoDB connection.")
+        logger.error(f"Error: {exc}")
+        logger.error("=" * 70)
+        logger.error("\nDebugging Steps:")
+        logger.error("1. Check your MONGODB_URI environment variable is correct")
+        logger.error("2. Verify MongoDB Atlas Network Access includes this server's IP")
+        logger.error("3. Check MongoDB Atlas credentials (username/password)")
+        logger.error("4. Verify the cluster is online and accessible")
+        logger.error("5. Check DNS resolution for the cluster hostname")
+        logger.error("=" * 70)
+        raise RuntimeError(f"MongoDB connection failed: {exc}") from exc
+    
+    # CRITICAL: Create indexes and initialize default data
+    logger.info("Step 2: Ensuring database indexes...")
+    try:
+        ensure_indexes()
+        logger.info("✓ Database indexes ensured")
+    except Exception as e:
+        logger.error("Failed to create database indexes: %s", e)
+        raise RuntimeError(f"Could not create indexes: {e}") from e
+    
+    # Initialize default admin user if it doesn't exist
+    logger.info("Step 3: Initializing default admin user...")
+    try:
+        db = get_database()
+        existing_admin = db["admins"].find_one({})
+        if not existing_admin:
+            default_password = settings.ADMIN_DEFAULT_PASSWORD or "admin123"
+            default_admin = {
+                "admin_id": 1,
+                "username": settings.ADMIN_DEFAULT_USERNAME,
+                "password_hash": hash_password(default_password),
+                "email": None,
+                "full_name": "System Administrator",
+                "is_active": True,
+            }
+            db["admins"].insert_one(default_admin)
+            logger.info("✓ Default admin user created: %s", settings.ADMIN_DEFAULT_USERNAME)
+        else:
+            logger.info("✓ Admin user already exists")
+    except PyMongoError as exc:
+        logger.error("Failed to initialize admin user: %s", exc)
+        raise RuntimeError(f"Could not initialize admin user: {exc}") from exc
+    except Exception as exc:
+        logger.error("Unexpected error during admin initialization: %s", exc)
+        raise RuntimeError(f"Unexpected error during admin initialization: {exc}") from exc
+    
+    logger.info("=" * 70)
+    logger.info("✓ APPLICATION STARTUP COMPLETE - ALL SYSTEMS OPERATIONAL")
+    logger.info("=" * 70)
 
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
