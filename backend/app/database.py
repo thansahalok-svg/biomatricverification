@@ -1,6 +1,5 @@
 import logging
 from typing import Generator, Optional
-import ssl
 
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
@@ -9,109 +8,51 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 client: Optional[MongoClient] = None
 database = None
-_connection_error: Optional[Exception] = None
 
 
 def get_client() -> Optional[MongoClient]:
-    """Create and cache the MongoDB client with maximum resilience."""
-    global client, _connection_error
+    """
+    Create and cache the MongoDB client.
+    
+    Uses a single production-ready configuration for MongoDB Atlas.
+    The connection string should be a valid MongoDB URI (mongodb+srv://... or mongodb://...).
+    TLS is automatically enabled for mongodb+srv:// URIs by PyMongo.
+    """
+    global client
     
     if client is not None:
         return client
     
-    if _connection_error is not None:
-        logger.warning(f"MongoDB previously failed to connect: {_connection_error}")
-        # Try again in case connection is now available
-    
     try:
-        # Strategy 1: Try with tlsAllowInvalidCertificates
-        logger.info("Attempting MongoDB connection (strategy 1)...")
-        client = MongoClient(
-            settings.MONGODB_URI,
-            serverSelectionTimeoutMS=20000,
-            connectTimeoutMS=20000,
-            socketTimeoutMS=20000,
-            retryWrites=True,
-            maxPoolSize=10,
-            minPoolSize=1,
-            ssl=True,
-            tlsAllowInvalidCertificates=True,
-        )
-        client.admin.command('ping')
-        logger.info("✓ MongoDB connected successfully (strategy 1)")
-        _connection_error = None
-        return client
-    except Exception as e1:
-        logger.warning(f"Strategy 1 failed: {type(e1).__name__}: {e1}")
-    
-    try:
-        # Strategy 2: Try with custom SSL context
-        logger.info("Attempting MongoDB connection (strategy 2)...")
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
+        logger.info("Connecting to MongoDB Atlas...")
         
+        # Production-ready MongoDB connection configuration
+        # MongoDB Atlas URIs (mongodb+srv://) automatically use TLS
+        # No additional SSL parameters needed for valid certificates
         client = MongoClient(
             settings.MONGODB_URI,
-            serverSelectionTimeoutMS=20000,
-            connectTimeoutMS=20000,
-            socketTimeoutMS=20000,
+            serverSelectionTimeoutMS=30000,
+            connectTimeoutMS=30000,
+            socketTimeoutMS=30000,
             retryWrites=True,
             maxPoolSize=10,
             minPoolSize=1,
-            ssl_context=ssl_context,
+            # ConnectionPoolOptions for better stability on Render
+            maxIdleTimeMS=45000,
         )
+        
+        # Verify connection is working
         client.admin.command('ping')
-        logger.info("✓ MongoDB connected successfully (strategy 2)")
-        _connection_error = None
+        logger.info("✓ MongoDB connection successful")
+        
         return client
-    except Exception as e2:
-        logger.warning(f"Strategy 2 failed: {type(e2).__name__}: {e2}")
-    
-    try:
-        # Strategy 3: Try with tlsInsecure
-        logger.info("Attempting MongoDB connection (strategy 3)...")
-        client = MongoClient(
-            settings.MONGODB_URI,
-            serverSelectionTimeoutMS=20000,
-            connectTimeoutMS=20000,
-            socketTimeoutMS=20000,
-            retryWrites=True,
-            maxPoolSize=10,
-            minPoolSize=1,
-            ssl=True,
-            tlsInsecure=True,
-        )
-        client.admin.command('ping')
-        logger.info("✓ MongoDB connected successfully (strategy 3)")
-        _connection_error = None
-        return client
-    except Exception as e3:
-        logger.warning(f"Strategy 3 failed: {type(e3).__name__}: {e3}")
-    
-    try:
-        # Strategy 4: Try without any SSL options
-        logger.info("Attempting MongoDB connection (strategy 4)...")
-        client = MongoClient(
-            settings.MONGODB_URI,
-            serverSelectionTimeoutMS=20000,
-            connectTimeoutMS=20000,
-            socketTimeoutMS=20000,
-            retryWrites=True,
-            maxPoolSize=10,
-            minPoolSize=1,
-        )
-        client.admin.command('ping')
-        logger.info("✓ MongoDB connected successfully (strategy 4)")
-        _connection_error = None
-        return client
-    except Exception as e4:
-        logger.warning(f"Strategy 4 failed: {type(e4).__name__}: {e4}")
-        _connection_error = e4
-    
-    logger.error(f"All MongoDB connection strategies failed. Last error: {_connection_error}")
-    # Return None instead of raising - let routes handle gracefully
-    return None
+        
+    except ServerSelectionTimeoutError as e:
+        logger.error(f"MongoDB connection timeout. Check your MONGODB_URI and network connectivity: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to connect to MongoDB: {type(e).__name__}: {e}")
+        return None
 
 
 def get_database():
