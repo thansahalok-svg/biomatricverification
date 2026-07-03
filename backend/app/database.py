@@ -98,17 +98,22 @@ def get_client() -> Optional[MongoClient]:
         
         # Production-ready MongoDB connection configuration
         # MongoDB Atlas URIs (mongodb+srv://) automatically use TLS
-        # No additional SSL parameters needed for valid certificates
+        # PyMongo handles certificate validation by default
         logger.info("Creating MongoDB client...")
+        
         client = MongoClient(
             settings.MONGODB_URI,
+            # Connection timeouts optimized for Render
             serverSelectionTimeoutMS=30000,
             connectTimeoutMS=30000,
             socketTimeoutMS=30000,
+            
+            # Retry configuration for stability
             retryWrites=True,
+            
+            # Connection pooling optimized for Render's serverless environment
             maxPoolSize=10,
             minPoolSize=1,
-            # ConnectionPoolOptions for better stability on Render
             maxIdleTimeMS=45000,
         )
         
