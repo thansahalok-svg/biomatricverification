@@ -12,12 +12,19 @@ logger = logging.getLogger(__name__)
 client: Optional[MongoClient] = None
 database = None
 
+# Try to import Motor (async client) for future migrations
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient
+    MOTOR_AVAILABLE = True
+except ImportError:
+    MOTOR_AVAILABLE = False
+    AsyncIOMotorClient = None
+
 
 def log_environment_info() -> None:
     """Log diagnostic information about the Python and MongoDB environment."""
     try:
         import ssl as ssl_module
-        import dnspython
         import certifi
         
         logger.info("=" * 70)
@@ -114,15 +121,30 @@ def get_client() -> Optional[MongoClient]:
         
     except ServerSelectionTimeoutError as e:
         logger.error("=" * 70)
-        logger.error("MONGODB CONNECTION TIMEOUT ERROR")
+        logger.error("MONGODB CONNECTION TIMEOUT")
         logger.error("=" * 70)
-        logger.error("Failed to connect to MongoDB Atlas within 30 seconds")
-        logger.error("Possible causes:")
-        logger.error("  1. MongoDB Atlas Network Access - Check IP whitelist settings")
-        logger.error("  2. DNS Resolution - Unable to resolve cluster SRV record")
-        logger.error("  3. Render Networking - Outbound connection may be blocked")
-        logger.error("  4. Credentials - Invalid username/password")
+        logger.error(f"Failed to connect to MongoDB Atlas within 30 seconds")
         logger.error(f"Error Details: {e}")
+        logger.error("")
+        logger.error("TROUBLESHOOTING STEPS:")
+        logger.error("1. MongoDB Atlas Network Access:")
+        logger.error("   - Go to MongoDB Atlas Dashboard → Security → Network Access")
+        logger.error("   - Add Render's IP range or use 0.0.0.0/0 (temporary for testing)")
+        logger.error("   - If using Render, check their documentation for outbound IPs")
+        logger.error("")
+        logger.error("2. DNS Resolution:")
+        logger.error("   - Run: python test_mongodb_connection.py")
+        logger.error("   - Verify DNS can resolve cluster hostname")
+        logger.error("   - Ensure dnspython is installed (in requirements.txt)")
+        logger.error("")
+        logger.error("3. MongoDB Atlas Cluster:")
+        logger.error("   - Verify cluster is running (not paused)")
+        logger.error("   - Check cluster status in MongoDB Atlas console")
+        logger.error("")
+        logger.error("4. Connection String:")
+        logger.error(f"   - Cluster: {cluster_host}")
+        logger.error(f"   - URI Format: {settings.MONGODB_URI[:20]}...***")
+        logger.error(f"   - Ensure URI is correct and not modified in code")
         logger.error("=" * 70)
         return None
         
@@ -132,26 +154,79 @@ def get_client() -> Optional[MongoClient]:
         logger.error("=" * 70)
         logger.error(f"Error Type: {type(e).__name__}")
         logger.error(f"Error Message: {e}")
+        logger.error("")
         
         # Provide specific guidance based on error type
         error_str = str(e).lower()
-        if "ssl" in error_str or "tls" in error_str or "handshake" in error_str:
-            logger.error("\nLikely TLS/SSL Issue:")
-            logger.error("  - Verify MongoDB Atlas is using valid TLS certificates")
-            logger.error("  - Check if Python OpenSSL version is up-to-date")
-            logger.error("  - Try using the standard mongodb:// URI instead of mongodb+srv://")
-            logger.error("  - Verify Network Access rule includes Render's IP")
-        elif "authentication" in error_str or "unauthorized" in error_str:
-            logger.error("\nLikely Authentication Issue:")
-            logger.error("  - Verify MONGODB_URI credentials are correct")
-            logger.error("  - Check that the database user has proper permissions")
-            logger.error("  - Verify the database user is not locked/disabled in MongoDB Atlas")
-        elif "dns" in error_str or "name" in error_str:
-            logger.error("\nLikely DNS/Resolution Issue:")
-            logger.error("  - Verify cluster hostname is correct in MONGODB_URI")
-            logger.error("  - Check that DNSPython is installed (required for SRV lookups)")
-            logger.error("  - Try using IP address instead of hostname")
         
+        if "ssl" in error_str or "tls" in error_str or "handshake" in error_str or "certificate" in error_str:
+            logger.error("ROOT CAUSE: TLS/SSL Certificate Validation Issue")
+            logger.error("")
+            logger.error("SOLUTIONS:")
+            logger.error("1. Update OpenSSL/Python:")
+            logger.error("   - Render: OpenSSL is managed by Render's Python buildpack")
+            logger.error("   - Local: pip install --upgrade cryptography certifi")
+            logger.error("")
+            logger.error("2. Check MongoDB Atlas Certificates:")
+            logger.error("   - All MongoDB Atlas clusters use valid Let's Encrypt certs")
+            logger.error("   - Issue usually indicates network proxy or firewall problem")
+            logger.error("")
+            logger.error("3. Try Connection String Variants:")
+            logger.error("   - Current: mongodb+srv://... (uses SRV DNS records)")
+            logger.error("   - Alternative: Use standard mongodb://... URI from Atlas")
+            logger.error("")
+            
+        elif "authentication" in error_str or "auth" in error_str or "unauthorized" in error_str:
+            logger.error("ROOT CAUSE: Authentication Failed")
+            logger.error("")
+            logger.error("TROUBLESHOOTING:")
+            logger.error("1. Check MONGODB_URI Credentials:")
+            logger.error("   - Verify username and password are correct")
+            logger.error("   - URL-encode special characters (@, :, #, ?, etc.)")
+            logger.error("")
+            logger.error("2. MongoDB Atlas Database User:")
+            logger.error("   - Go to MongoDB Atlas → Security → Database Access")
+            logger.error("   - Verify user exists and has required roles")
+            logger.error("   - User must have 'readWrite' role on database")
+            logger.error("")
+            logger.error("3. Check Database Name:")
+            logger.error(f"   - Current database: {settings.MONGODB_DB}")
+            logger.error("")
+            
+        elif "dns" in error_str or "name resolution" in error_str or "socket.gaierror" in error_str:
+            logger.error("ROOT CAUSE: DNS Resolution Failed")
+            logger.error("")
+            logger.error("TROUBLESHOOTING:")
+            logger.error("1. Verify dnspython Installation:")
+            logger.error("   - Required for mongodb+srv:// URIs")
+            logger.error("   - Check: pip list | grep dnspython")
+            logger.error("   - Render: Should be installed from requirements.txt")
+            logger.error("")
+            logger.error("2. Test DNS Resolution:")
+            logger.error("   - Run: python test_mongodb_connection.py")
+            logger.error("   - Or: python -c \"import socket; socket.getaddrinfo('{hostname}', 27017)\"")
+            logger.error("")
+            logger.error("3. Check Cluster Hostname:")
+            logger.error(f"   - Extracted hostname: {cluster_host}")
+            logger.error("   - Must match MongoDB Atlas cluster name")
+            logger.error("")
+            
+        elif "module not found" in error_str or "no module" in error_str:
+            logger.error("ROOT CAUSE: Missing Required Package")
+            logger.error("")
+            logger.error("SOLUTION:")
+            logger.error("- Install missing package: pip install -r requirements.txt")
+            logger.error("- For Render: Ensure requirements.txt includes all packages")
+            logger.error("- Run: python test_mongodb_connection.py to verify all packages")
+            logger.error("")
+            
+        else:
+            logger.error("UNKNOWN ERROR - Unable to determine root cause")
+            logger.error("Run 'python test_mongodb_connection.py' for detailed diagnostics")
+            logger.error("")
+        
+        logger.error(f"Cluster: {cluster_host}")
+        logger.error(f"Database: {settings.MONGODB_DB}")
         logger.error("=" * 70)
         return None
 
